@@ -7,11 +7,16 @@
 * the WS2812 string connected to PB4.
 */
 
+//6266 bytes left
+
 #include <util/delay.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <avr/sleep.h>
 #include "ws2812.h"
 #include "program.h"
+
+#define PROG_RESET 0x0000
 
 void setColor(tRGB *c, tRGB *baseColor, unsigned char brightness)
 {
@@ -66,24 +71,100 @@ uchar keyPress()
 
 void initHw()
 {
-/*
-  #ifdef __AVR_ATtiny10__
-  CCP=0xD8;		// configuration change protection, write signature
-  CLKPSR=0;		// set cpu clock prescaler =1 (8Mhz) (attiny 4/5/9/10)
-  #else
-  CLKPR=_BV(CLKPCE);
-  CLKPR=0;			// set clock prescaler to 1 (attiny 25/45/85/24/44/84/13/13A)
-  #endif
-*/
+	//disable pin change and int0
+	GIMSK = 0;
+	PCMSK = 0;
+	
+	//disable peripheral clocks for adc usi and tmr0 tmr1
+	PRR = 0xF;
+	
+	//disable adc
+	ADCSRA = 0;
+	
+	//disable tim0
+	TCCR0B = 0;
+	
+	//dsable tim1
+	TCCR1 = 0;
+	
+	//disable USI
+	USICR = 0;
+	
+	//disable analog comparator
+	ACSR = 1<<ACD;
+
+	//set clock to 4Mhz
+	CLKPR = 1<<CLKPCE;
+	CLKPR = 1<<CLKPS1;
+	
+	sleep_disable();
 
 	JUMPER_DDR &= ~_BV(JUMPER_PIN);
 	JUMPER_PORT |= _BV(JUMPER_PIN);
+	
+	//disable rbg led power
+	DDRB |= 1<<2;
+	PORTB |= (1<<2);
+	
 	_delay_ms(1);
 }
 
+void gotoSleep(void)
+{
+	unsigned char mcucr1, mcucr2;
+	
+	DDRB &= ~(1<<1 | 1<<2);
+	PORTB &= ~(1<<1 | 1<<2 /*| 1<<3 | 1<<4*/);
+	//PORTB |= 1<<2;
 
+	cli();
+	
+	//disable peripheral clocks for adc usi and tmr0 tmr1
+	PRR = 0xF;
 
+	//set clock back to 16Mhz for bootloader
+	CLKPR = 1<<CLKPCE;
+	CLKPR = 0;
 
+	//enable pin change interrupt
+	GIMSK |= 1<<PCIE;
+	PCMSK |= 1<<PCINT0;
+	
+	//prepare sleep mode = power down
+	mcucr1 = (1<<SE | 1<<SM1 | 1<<BODS | 1<<BODSE);
+	mcucr2 = (1<<SE | 1<<SM1 | 1<<BODS);
+	
+	sei();
+	
+	//try to dosable BOD
+	MCUCR = 0xb4;//mcucr1;
+	MCUCR = 0xb0;//mcucr2;
+	
+	__asm__ __volatile__ ("sleep" "\n\t" :: );
+}
+
+//when exiting sleep reset the part
+ISR(PCINT0_vect)
+{
+	//set clock back to 16Mhz
+	//CLKPR = 1<<CLKPCE;
+	//CLKPR = 0;
+	
+	volatile uchar key = NO_KEY;
+	
+	//wait for short or long press
+	do
+	{
+		key = keyPress();
+	}
+	while(key == NO_KEY);
+	
+	//if longpress bootloader will be invoked, 
+	//else bootloader will be skipped
+	
+	//jump to bootloader
+	(*((void(*)(void))PROG_RESET))();
+}
 
 void resetProgram(uchar program, unsigned short *interpDelay)
 {
@@ -97,8 +178,6 @@ void resetProgram(uchar program, unsigned short *interpDelay)
 
 	}
 	else g_curProgram.nextColor = gPrograms[program].pal->pal[gPrograms[program].steps[1].col];
-
-
 }
 
 void doProgramLoop(uchar program, unsigned char interpStep)
@@ -116,6 +195,9 @@ void doProgramLoop(uchar program, unsigned char interpStep)
 		
 	}
 	
+	interpCol.r=0;
+	interpCol.g=0;
+	interpCol.b=1;
 	ws2812_setleds(&interpCol, 1);
 }
 
@@ -164,43 +246,58 @@ int main(void)
 	
 	volatile unsigned short interpStep = 1;
 
-
 	initHw();
 	
 	resetProgram(curProgram, &interpStep);
 
-do
-{	
+	do
+	{	
 
-	switch(keyPress())
-	{
-		case NO_KEY:
-		break;
-		
-		case SHORT_PRESS:
-			curProgram = (curProgram + 1) % NUM_PROGS;
-			resetProgram(curProgram, &interpStep);
-			curTime = 0;
+		switch(keyPress())
+		{
+			case NO_KEY:
+			break;
 			
-		break;
+			case SHORT_PRESS:
+			{
+				curProgram = (curProgram + 1) % NUM_PROGS;
+				resetProgram(curProgram, &interpStep);
+				curTime = 0;
+				break;
+			}
+			case LONG_PRESS:
+			{
+				//set led off
+				tRGB col;
+				col.r = col.g = col.b = 128;
+				ws2812_setleds(&col, 1);
+
+				//wait for button release
+				while(!(JUMPER_INP&_BV(JUMPER_PIN)))
+				;
+
+				//reset keypress
+				keyPress();
+
+				col.r = col.g = col.b = 1;
+				ws2812_setleds(&col, 1);
+
+				gotoSleep();
+				break;
+			}
+		}
+
+		curTime = (curTime + 1) % INTERP_STEPS;
+
+		if(curTime == 0 || interpStep == 0)
+		{
+			advanceStep(curProgram, &interpStep);
+		}
 		
-		case LONG_PRESS:
-		break;
+		doProgramLoop(curProgram, curTime);
+
+		_delay_ms(interpStep);
+
 	}
-
-	curTime = (curTime + 1) % INTERP_STEPS;
-	
-	if(curTime == 0 || interpStep == 0)
-	{
-		advanceStep(curProgram, &interpStep);
-	}
-	
-	doProgramLoop(curProgram, curTime);
-	
-	_delay_ms(interpStep);
-
-}
-while(1);
-
-
+	while(1);
 }

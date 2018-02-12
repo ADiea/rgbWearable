@@ -1,5 +1,6 @@
 DEVICE     = attiny85
-F_CPU      = 16500000
+#F_CPU      = 16500000
+F_CPU      = 4125000
 OBJECTS    = main.o ws2812.o
 
 COMPILE = avr-gcc -Wall -Os -DF_CPU=$(F_CPU) -mmcu=$(DEVICE)

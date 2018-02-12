@@ -16,7 +16,13 @@
  
 void inline ws2812_setleds(struct cRGB *ledarray, uint16_t leds)
 {
+   //power up rgb led
+   PORTB &= ~(1<<2);
+   
    ws2812_setleds_pin(ledarray,leds, _BV(ws2812_pin));
+   
+   //power down rgb led
+  // PORTB |= (1<<2);
 }
 
 void inline ws2812_setleds_pin(struct cRGB *ledarray, uint16_t leds, uint8_t pinmask)
