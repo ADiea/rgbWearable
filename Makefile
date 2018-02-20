@@ -5,7 +5,7 @@ OBJECTS    = main.o ws2812.o
 
 COMPILE = avr-gcc -Wall -Os -DF_CPU=$(F_CPU) -mmcu=$(DEVICE)
  
-all:	main.hex
+all:	main.s ws2812.s main.hex
  
 .c.o:
 	$(COMPILE) -c $< -o $@
@@ -13,11 +13,17 @@ all:	main.hex
 .S.o:
 	$(COMPILE) -x assembler-with-cpp -c $< -o $@
  
-.c.s:
-	$(COMPILE) -S $< -o $@
+#.c.s:
+#	$(COMPILE) -S $< -o $@
+	
+%.s : %.c
+	$(COMPILE) -S -fverbose-asm $< -o $@
+	
+%.lss: $(TARGET)
+	avr-objdump -h -S $<
  
 clean:
-	rm -f main.hex main.elf $(OBJECTS)
+	rm -f main.hex main.elf main.s ws2812.s main.lss main.lst $(OBJECTS)
  
 main.elf: $(OBJECTS)
 	$(COMPILE) -o main.elf $(OBJECTS)

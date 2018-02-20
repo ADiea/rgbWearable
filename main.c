@@ -44,7 +44,7 @@ uchar keyPress()
 		{
 			btnPressed = 1;
 			
-			if(btnTimer < 255)
+			if(btnTimer < 150)
 				btnTimer++;
 		}		
 	}
@@ -52,9 +52,9 @@ uchar keyPress()
 	
 	if(btnPressed)
 	{
-		if(btnTimer > 150 && (btnTimer & 0x2))
+		if(btnTimer >= 150 /*&& (btnTimer & 0x2)*/)
 		{	
-			retVal = LONG_PRESS;//curBrightness++;
+			retVal = LONG_PRESS;
 		}
 	}
 	else
@@ -71,6 +71,9 @@ uchar keyPress()
 
 void initHw()
 {
+	//disable interrupts
+	cli();
+	
 	//disable pin change and int0
 	GIMSK = 0;
 	PCMSK = 0;
@@ -117,11 +120,6 @@ void gotoSleep(void)
 	PORTB &= ~(1<<1 | 1<<2 /*| 1<<3 | 1<<4*/);
 	//PORTB |= 1<<2;
 
-	cli();
-	
-	//disable peripheral clocks for adc usi and tmr0 tmr1
-	PRR = 0xF;
-
 	//set clock back to 16Mhz for bootloader
 	CLKPR = 1<<CLKPCE;
 	CLKPR = 0;
@@ -130,15 +128,11 @@ void gotoSleep(void)
 	GIMSK |= 1<<PCIE;
 	PCMSK |= 1<<PCINT0;
 	
-	//prepare sleep mode = power down
-	mcucr1 = (1<<SE | 1<<SM1 | 1<<BODS | 1<<BODSE);
-	mcucr2 = (1<<SE | 1<<SM1 | 1<<BODS);
-	
 	sei();
 	
 	//try to dosable BOD
-	MCUCR = 0xb4;//mcucr1;
-	MCUCR = 0xb0;//mcucr2;
+	MCUCR = (1<<SE | 1<<SM1 | 1<<BODS | 1<<BODSE);
+	MCUCR = (1<<SE | 1<<SM1 | 1<<BODS);
 	
 	__asm__ __volatile__ ("sleep" "\n\t" :: );
 }
@@ -146,24 +140,7 @@ void gotoSleep(void)
 //when exiting sleep reset the part
 ISR(PCINT0_vect)
 {
-	//set clock back to 16Mhz
-	//CLKPR = 1<<CLKPCE;
-	//CLKPR = 0;
-	
-	volatile uchar key = NO_KEY;
-	
-	//wait for short or long press
-	do
-	{
-		key = keyPress();
-	}
-	while(key == NO_KEY);
-	
-	//if longpress bootloader will be invoked, 
-	//else bootloader will be skipped
-	
-	//jump to bootloader
-	(*((void(*)(void))PROG_RESET))();
+;
 }
 
 void resetProgram(uchar program, unsigned short *interpDelay)
@@ -238,7 +215,7 @@ void advanceStep(uchar program, unsigned short *interpDelay)
 
 }
 
-int main(void)
+__attribute__ ((noreturn)) void main(void) 
 {
 	volatile unsigned char curTime = 0;
 	volatile uchar curProgram = 2;
@@ -283,6 +260,17 @@ int main(void)
 				ws2812_setleds(&col, 1);
 
 				gotoSleep();
+				
+				//wait for short or long press
+				do { ; }
+				while(keyPress() == NO_KEY);
+				
+				//if longpress bootloader will be invoked, 
+				//else bootloader will be skipped
+				
+				//jump to bootloader
+				(*((void(*)(void))PROG_RESET))();
+				
 				break;
 			}
 		}
