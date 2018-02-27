@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>RGB wearable program</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    </head>
+
+    <body>
+		
+		<div id="prog" /> 
+	
+		<script src="dat.gui.min.js"></script>
+        <script>
+            init();
+			
+			
+			
+
+            function init() 
+			{
+				
+				//canvas
+				var progList = [];
+				
+				var div = document.createElement("div");
+					div.style.position= 'absolute';
+					div.style.display = 'block';
+					div.style.top='0px';
+					div.style.float='left';
+				document.getElementById("prog").appendChild(div);
+	
+				var canvas =  document.createElement('canvas');
+				canvas.width = canvas.height = 1024;
+				
+				div.appendChild(canvas);
+	
+				var ctx = canvas.getContext('2d');
+				
+				var gPalette = {
+				palette0:"#000", 
+				palette1:"#f00",
+				palette2:"#0f0", 
+				palette3:"#00f",
+				palette4:"#00ffff", 
+				palette5:"#6600ff",
+				palette6:"#9900ff", 
+				palette7:"#990066",
+				palette8:"#99ff00", 
+				palette9:"#99ffff",
+				palette10:"#ffff00",
+				palette11:"#ff6633", 
+				palette12:"#ff00ff",
+				palette13:"#ffcc33", 
+				palette14:"#669933",
+				palette15:"#fff",
+			};
+				
+				var updateCanvas = function()
+				{
+					ctx.moveTo(0,0);
+					
+					//cleanup
+					ctx.fillStyle = "#ddd";
+					ctx.fillRect(0, 0, 1024, 1024);
+					
+					ctx.moveTo(0,255);
+					var accum = 0;
+					
+					ctx.font = "14px Arial";
+					
+					for(var i=0; i< progList.length; i++)
+					{
+						var obj = JSON.parse(progList[i]);
+						
+						ctx.fillStyle = '#000';
+						ctx.fillText(i+"", accum, 270); 
+						
+						var fill = gPalette['palette'+obj.color];
+						if(i<progList.length-1 && obj.fadeIntoNext)
+						{
+							var nextobj = JSON.parse(progList[i+1]);
+							fill=ctx.createLinearGradient(accum,0,accum + obj.finalDuration*20,0);
+							fill.addColorStop(0,gPalette['palette'+obj.color]);
+							fill.addColorStop(1,gPalette['palette'+nextobj.color]);
+						}
+						
+						ctx.fillStyle = fill;
+						
+						ctx.fillRect(accum, 128, obj.finalDuration*20, 128);
+						accum += obj.finalDuration*20;
+					}
+				}
+
+				updateCanvas();
+				
+				//gui
+				
+				var guiPal = new dat.GUI();
+				
+				var prog = {
+					duration:0.1,
+					durationFactor:0,
+					finalDuration:0.1,
+					color:0,
+					fadeIntoNext:false,
+					listIndex:0,
+					listSize:0,
+					read:function() 
+					{
+						var obj = JSON.parse(progList[this.listIndex]);
+						
+						this.duration = obj.duration;
+						this.durationFactor = obj.durationFactor;
+						this.finalDuration = this.duration * Math.pow(2, prog.durationFactor);
+						this.color = obj.color;
+						this.fadeIntoNext = obj.fadeIntoNext;
+					},
+					write:function()
+					{
+						if(this.listIndex >= progList.length)
+						{
+							progList.push(JSON.stringify(this));
+						}
+						else
+						{
+							progList[this.listIndex] = JSON.stringify(this);
+						}
+						
+						updateCanvas();
+						
+						this.listSize = progList.length;
+						this.listIndex = this.listSize;
+					}
+				};
+				
+				guiPal.addColor(gPalette, 'palette0')/*.onFinishChange( function(colorValue  ) {		})*/;
+				guiPal.addColor(gPalette, 'palette1')/*.onFinishChange( function(colorValue  ) {		})*/;
+				guiPal.addColor(gPalette, 'palette2')/*.onFinishChange( function(colorValue  ) {		})*/;
+				guiPal.addColor(gPalette, 'palette3')/*.onFinishChange( function(colorValue  ) {		})*/;
+				guiPal.addColor(gPalette, 'palette4')/*.onFinishChange( function(colorValue  ) {		})*/;
+				guiPal.addColor(gPalette, 'palette5')/*.onFinishChange( function(colorValue  ) {		})*/;
+				guiPal.addColor(gPalette, 'palette6')/*.onFinishChange( function(colorValue  ) {		})*/;
+				guiPal.addColor(gPalette, 'palette7')/*.onFinishChange( function(colorValue  ) {		})*/;
+				guiPal.addColor(gPalette, 'palette8')/*.onFinishChange( function(colorValue  ) {		})*/;
+				guiPal.addColor(gPalette, 'palette9')/*.onFinishChange( function(colorValue  ) {		})*/;
+				guiPal.addColor(gPalette, 'palette10')/*.onFinishChange( function(colorValue  ) {		})*/;
+				guiPal.addColor(gPalette, 'palette11')/*.onFinishChange( function(colorValue  ) {		})*/;
+				guiPal.addColor(gPalette, 'palette12')/*.onFinishChange( function(colorValue  ) {		})*/;
+				guiPal.addColor(gPalette, 'palette13')/*.onFinishChange( function(colorValue  ) {		})*/;
+				guiPal.addColor(gPalette, 'palette14')/*.onFinishChange( function(colorValue  ) {		})*/;
+				guiPal.addColor(gPalette, 'palette15')/*.onFinishChange( function(colorValue  ) {		})*/;
+				
+				var guiProg = new dat.GUI();
+				
+				guiProg.add(prog, 'duration', 0.1, 3.2).step(0.1).onChange( function(d) 
+					{
+					prog.finalDuration = d * Math.pow(2, prog.durationFactor);
+					}).listen();
+
+				guiProg.add(prog, 'durationFactor', 0, 7).step(1).onChange( function(d) 
+					{
+					prog.finalDuration = prog.duration * Math.pow(2, d);
+					}).listen();
+				
+				guiProg.add(prog, 'finalDuration').listen();
+				
+				guiProg.add(prog, 'color', 0, 15).step(1).listen();
+				
+				guiProg.add(prog, 'fadeIntoNext').listen();
+
+				guiProg.add(prog, 'listIndex', 0, 16).step(1).listen();
+				guiProg.add(prog, 'listSize').listen();
+
+				guiProg.add(prog, 'read');
+				guiProg.add(prog, 'write');
+            }
+        </script>
+    </body>
+</html>
