@@ -23,8 +23,12 @@ void inline ws2812_setleds(struct cRGB *ledarray, uint16_t leds)
 	}
 	else
 	{
-	   //power up rgb led
-	   PORTB &= ~(1<<2);
+	   //power up rgb led if not already 
+	   if(PORTB & (1<<2))
+	   {
+		PORTB &= ~(1<<2);
+	    _delay_ms(5);
+	   }
 	   //send data
 	   ws2812_setleds_pin(ledarray,leds, _BV(ws2812_pin));
 	}  
