@@ -172,8 +172,7 @@ void doProgramLoop(uchar program)
 	Command *step = &(gPrograms[program].steps[g_curProgram.curStep]);
 	
 	unsigned short remainingTime = g_curProgram.maxStepTime - g_curProgram.curStepTime;
- 
-	
+ 	
 	if(!(step->fadeToNext))
 	{
 		interpCol = g_curProgram.curColor;
@@ -192,9 +191,6 @@ void doProgramLoop(uchar program)
 		advanceStep(program);
 	}
 	
-	//interpCol.r=0;
-	//interpCol.g=0;
-	//interpCol.b=1;
 	ws2812_setleds(&interpCol, 1);
 }
 
@@ -202,7 +198,7 @@ void doProgramLoop(uchar program)
 
 __attribute__ ((noreturn)) void main(void) 
 {
-	volatile uchar curProgram = 2;
+	volatile uchar curProgram = 0;
 	
 	initHw();
 	
@@ -230,13 +226,19 @@ __attribute__ ((noreturn)) void main(void)
 			{
 				//set led off
 				tRGB col;
-				col.r = col.g = col.b = 128;
-				ws2812_setleds(&col, 1);
-
+				col.r = col.g = col.b = 0;
+				
 				//wait for button release
 				while(!(JUMPER_INP&_BV(JUMPER_PIN)))
-				;
-
+				{
+					col.b = 128;
+					ws2812_setleds(&col, 1);
+					_delay_ms(300);
+					col.b = 0;
+					ws2812_setleds(&col, 1);
+					_delay_ms(300);
+				}
+				
 				//reset keypress
 				keyPress();
 
@@ -246,7 +248,7 @@ __attribute__ ((noreturn)) void main(void)
 				gotoSleep();
 				
 				//wait for short or long press
-				do { ; }
+				do { _delay_ms(DLY_STEP); }
 				while(keyPress() == NO_KEY);
 				
 				//if longpress bootloader will be invoked, 

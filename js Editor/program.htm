@@ -9,6 +9,10 @@
     <body>
 		
 		<div id="prog" /> 
+		
+		<div id="palette" >
+		
+		</div>
 
 		<div id="output" style="width:1024px" />
 	
@@ -16,14 +20,13 @@
         <script>
             init();
 			
-			
-			
-
             function init() 
 			{
-				
 				//canvas
 				var progList = [];
+				
+				var mouseCursor = {x:0, y:0};
+				var mouseClick = false;
 				
 				var div = document.createElement("div");
 					//div.style.position= 'absolute';
@@ -57,7 +60,27 @@
 				palette14:"#669933",
 				palette15:"#ffffff",
 			};
+
+				var isInRect = function (pct, topleft, w, h)
+				{
+					if(pct.x < topleft.x) return false;
+					if(pct.y < topleft.y) return false;
+					if(pct.x > topleft.x + w) return false;
+					if(pct.y > topleft.y + h) return false;
+					
+					return true;
+				}
 				
+				var winToCanvas = function(x, y) 
+				{
+				   var box = canvas.getBoundingClientRect();
+				   return { x: x - box.left * (canvas.width  / box.width),
+							y: y - box.top  * (canvas.height / box.height)
+						  };
+				}
+				
+
+			
 				var updateCanvas = function()
 				{
 					ctx.moveTo(0,0);
@@ -82,28 +105,47 @@
 						if(i<progList.length-1 && obj.fadeIntoNext)
 						{
 							var nextobj = JSON.parse(progList[i+1]);
-							fill=ctx.createLinearGradient(accum,0,accum + obj.finalDuration*20,0);
+							fill=ctx.createLinearGradient(accum,0,accum + obj.finalDuration*10*prog.dispZoom,0);
 							fill.addColorStop(0,gPalette['palette'+obj.color]);
 							fill.addColorStop(1,gPalette['palette'+nextobj.color]);
 						}
 						else if(obj.fadeIntoNext)
 						{
 							var nextobj = JSON.parse(progList[0]);
-							fill=ctx.createLinearGradient(accum,0,accum + obj.finalDuration*20,0);
+							fill=ctx.createLinearGradient(accum,0,accum + obj.finalDuration*10*prog.dispZoom,0);
 							fill.addColorStop(0,gPalette['palette'+obj.color]);
 							fill.addColorStop(1,gPalette['palette'+nextobj.color]);
 						}
 						
 						ctx.fillStyle = fill;
 						
-						ctx.fillRect(accum, 128, obj.finalDuration*20, 128);
-						accum += obj.finalDuration*20;
+						ctx.fillRect(accum, 128, obj.finalDuration*10*prog.dispZoom, 128);
+						
+						if(isInRect(mouseCursor, {x:accum, y:128}, obj.finalDuration*10*prog.dispZoom, 128))
+						{
+							ctx.lineWidth=3;
+							ctx.strokeStyle="#FFFFFF";
+							ctx.strokeRect(accum, 128, obj.finalDuration*10*prog.dispZoom, 128);
+							ctx.lineWidth=1;
+							
+							if(mouseClick)
+							{
+								mouseClick = false;
+								prog.listIndex = i;
+								prog.read();
+							}
+						}
+						
+						accum += obj.finalDuration*10*prog.dispZoom;
+
+						ctx.fillStyle = '#000';
+						ctx.fillText(parseInt(accum/(10*prog.dispZoom))+"", accum, 110); 
 					}
 				}
 
 				var exportProgram = function()
 				{
-					var text="Command stepsProg_[] = {";
+					var text="/*" + progList.length + " steps */ Command stepsProg_[] = {";
 					for(var i=0; i< progList.length; i++)
 					{
 						var obj = JSON.parse(progList[i]);
@@ -153,6 +195,42 @@
 
 				updateCanvas();
 				
+				var cbk_mousemove = function (e) 
+				{
+					mouseCursor = winToCanvas(e.clientX, e.clientY);
+					updateCanvas();
+				}
+
+				var cbk_mouseup = function (e) 
+				{
+					mouseCursor = winToCanvas(e.clientX, e.clientY);
+					mouseClick = true;
+				}
+				
+				canvas.onmousemove = cbk_mousemove;
+				canvas.onmouseup = cbk_mouseup;
+				
+				
+				//palette menu
+				var palDivs = [];
+				
+				for(var i=0; i<16;i++)
+				{
+					palDivs.push(document.createElement("div"));
+						//div.style.position= 'absolute';
+						//div.style.display = 'block';
+						//div.style.top='0px';
+						palDivs[i].style.display = 'inline-block';
+						palDivs[i].style.border = 'solid gray 1px';
+						palDivs[i].style.height = palDivs[i].style.width ='48px';
+						palDivs[i].style.backgroundColor = gPalette['palette'+i];
+						palDivs[i].customColIdx = i;
+						palDivs[i].onmouseup = function() {prog.color = this.customColIdx;}
+						
+					document.getElementById("palette").appendChild(palDivs[i]);
+					
+				}
+				
 				//gui
 				
 				var guiPal = new dat.GUI();
@@ -165,6 +243,7 @@
 					fadeIntoNext:false,
 					listIndex:0,
 					listSize:0,
+					dispZoom:1,
 					read:function() 
 					{
 						var obj = JSON.parse(progList[this.listIndex]);
@@ -238,6 +317,9 @@
 				guiProg.add(prog, 'read');
 				guiProg.add(prog, 'write');
 				guiProg.add(prog, 'exportProgram');
+				
+				guiProg.add(prog, 'dispZoom', 0.2, 5.0).step(0.1).listen().onChange(function(){updateCanvas();});
+				
             }
         </script>
     </body>

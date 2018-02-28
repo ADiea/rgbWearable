@@ -5,7 +5,7 @@ OBJECTS    = main.o ws2812.o
 
 COMPILE = avr-gcc -Wall -Os -DF_CPU=$(F_CPU) -mmcu=$(DEVICE)
  
-all:	main.s ws2812.s main.hex
+all:	main.hex
  
 .c.o:
 	$(COMPILE) -c $< -o $@
