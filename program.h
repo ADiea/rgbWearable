@@ -1,67 +1,37 @@
 #include "ws2812.h"
 #include <avr/pgmspace.h>
 
+#define DURATION(x) ((((x) & 0x1F) + 1)*(1<<(((x)>>5) & 0x7)))
+
 #define NUM_COLS_MAX 16
 
 typedef struct tPallette
 {
-	unsigned char numCols;
-	//G R B
 	tRGB pal[NUM_COLS_MAX];
 } Palette;
 
 
-/*PROGMEM const */Palette pal0 = 
-{
-	3, //G R B
-	{{0,255,0},
-	{255,0,0},
-	{0,0,255}, 
-	{128,255,0}, {0,0,0}, {0,0,0}, {0,0,0}, 
-	{0,0,0}, {0,0,0}, {0,0,0}, {0,0,0}, 
-	{0,0,0}, {0,0,0}, {0,0,0}, {0,0,0}, {0,0,0}}
-};
-
-/*
-PROGMEM const Palette pal1 = 
-{
-	3, //G R B
-	{{0,255,0},
-	{255,0,0},
-	{0,0,255}, 
-	{0,0,0}, {0,0,0}, {0,0,0}, {0,0,0}, 
-	{0,0,0}, {0,0,0}, {0,0,0}, {0,0,0}, 
-	{0,0,0}, {0,0,0}, {0,0,0}, {0,0,0}, {0,0,0}}
-};
-*/
-#define MAX_DURATION 3968
-#define MSEC2DUR(x) ((unsigned short)(x) / 128)
-#define CMD_LAST 0
-#define CMD_FADE 1
-#define CMD_NOFADE 2
-#define CMD_RSVD 3
-
 typedef struct tCommand
 {
-
+	unsigned char duration;
+	
+	unsigned char random:1;
+	unsigned char randomMinMax:1;
+	unsigned char reserved:1;
+	unsigned char fadeToNext:1;
 	unsigned char col:4;
-	unsigned char op:2;
-	unsigned char dur0:5;
-	unsigned char dur1:5;
-
 } Command;
-
-#define MAX_PROG_STEPS 8
-
-#define PROG_TYPE_FADE 0
 
 typedef struct tProgParams
 {
-uchar curStep;
-tRGB curColor;
-tRGB nextColor;
+	uchar curStep;
+	uchar numStep;
 
+	unsigned short curStepTime;
+	unsigned short maxStepTime;
 
+	tRGB curColor;
+	tRGB nextColor;
 } ProgParams;
 
 ProgParams g_curProgram;
@@ -69,21 +39,35 @@ ProgParams g_curProgram;
 typedef struct tProgram
 {
 
-uchar progType;
+uchar numSteps;
 Palette *pal;
 
-Command steps[MAX_PROG_STEPS];
+Command *steps;
 } Program;
 
+Palette pal0 = {{
+{0,0,0}, {0,255,0}, {255,0,0}, {0,0,255}, 
+{255,0,255}, {0,102,255}, {0,153,255}, {0,153,102}, 
+{255,153,0}, {255,153,255}, {255,255,0}, {102,255,51},
+ {0,255,255}, {204,255,51}, {153,102,51}, {255,255,255}}};
+
+
+Command stepsProg_0[] = {{0, 0, 0, 0, 0, 0}, {9, 0, 0, 0, 1, 1}, {5, 0, 0, 0, 0, 0}, {9, 0, 0, 0, 1, 1}, {31, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 15}, {4, 0, 0, 0, 0, 0}, {4, 0, 0, 0, 1, 1}, {4, 0, 0, 0, 1, 15}, {4, 0, 0, 0, 1, 1}, {132, 0, 0, 0, 1, 0}, {4, 0, 0, 0, 1, 1}, {4, 0, 0, 0, 1, 15}, {4, 0, 0, 0, 1, 0}, {4, 0, 0, 0, 1, 1}, {29, 0, 0, 0, 0, 0}};
+
+/*Command stepsProg_1[] = {{0, 0, 0, 0, 0, 0}, {9, 0, 0, 0, 1, 2}, {5, 0, 0, 0, 0, 0}, {9, 0, 0, 0, 1, 2}, {31, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 15}, {4, 0, 0, 0, 0, 0}, {4, 0, 0, 0, 1, 2}, {4, 0, 0, 0, 1, 15}, {4, 0, 0, 0, 1, 2}, {132, 0, 0, 0, 1, 0}, {4, 0, 0, 0, 1, 2}, {4, 0, 0, 0, 1, 15}, {4, 0, 0, 0, 1, 0}, {4, 0, 0, 0, 1, 2}, {29, 0, 0, 0, 0, 0}};
+*/
+Command stepsProg_2[] = {{0, 0, 0, 0, 0, 0}, {9, 0, 0, 0, 1, 3}, {5, 0, 0, 0, 0, 0}, {9, 0, 0, 0, 1, 3}, {31, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 15}, {4, 0, 0, 0, 0, 0}, {4, 0, 0, 0, 1, 3}, {4, 0, 0, 0, 1, 15}, {4, 0, 0, 0, 1, 3}, {132, 0, 0, 0, 1, 0}, {4, 0, 0, 0, 1, 3}, {4, 0, 0, 0, 1, 15}, {4, 0, 0, 0, 1, 0}, {4, 0, 0, 0, 1, 3}, {29, 0, 0, 0, 0, 0}};
+
+Command stepsProg_1[] = {{29, 0, 0, 0, 0, 1}, {29, 0, 0, 0, 0, 2}, {29, 0, 0, 0, 0, 3}, {29, 0, 0, 0, 0, 0}};
 
 #define NUM_PROGS 3
 
 /*PROGMEM const*/ Program gPrograms[NUM_PROGS] = 
 {
-{PROG_TYPE_FADE, &pal0, {{0, CMD_FADE, MSEC2DUR(128), MSEC2DUR(MAX_DURATION)}, {1, CMD_FADE, MSEC2DUR(150), MSEC2DUR(MAX_DURATION)}, {2, CMD_FADE, MSEC2DUR(128), MSEC2DUR(MAX_DURATION)}, {0, CMD_LAST, 0, 0}, {0, CMD_LAST, 0, 0}, {0, CMD_LAST, 0, 0}, {0, CMD_LAST, 0, 0}, {0, CMD_LAST, 0, 0}}},
-{PROG_TYPE_FADE, &pal0, {{3, CMD_FADE, MSEC2DUR(256), MSEC2DUR(256)}, {4, CMD_FADE, MSEC2DUR(256), MSEC2DUR(256)}, {0, CMD_LAST, 0, 0}, {0, CMD_LAST, 0, 0}, {0, CMD_LAST, 0, 0}, {0, CMD_LAST, 0, 0}, {0, CMD_LAST, 0, 0}, {0, CMD_LAST, 0, 0}}},
-{PROG_TYPE_FADE, &pal0, {{0, CMD_FADE, MSEC2DUR(128), MSEC2DUR(0)}, {4, CMD_FADE, MSEC2DUR(128), MSEC2DUR(0)}, {0, CMD_FADE, MSEC2DUR(128), MSEC2DUR(0)}, {4, CMD_FADE, MSEC2DUR(300), MSEC2DUR(0)}, 
-						  {2, CMD_FADE, MSEC2DUR(128), MSEC2DUR(0)}, {4, CMD_FADE, MSEC2DUR(128), MSEC2DUR(0)}, {2, CMD_FADE, MSEC2DUR(128), MSEC2DUR(0)}, {4, CMD_FADE, MSEC2DUR(1000), MSEC2DUR(0)}}}
+	{16, &pal0, &stepsProg_0},
+	{16, &pal0, &stepsProg_2},
+	{4, &pal0, &stepsProg_1},
+	
 };
 
 

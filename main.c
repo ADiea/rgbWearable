@@ -18,13 +18,6 @@
 
 #define PROG_RESET 0x0000
 
-void setColor(tRGB *c, tRGB *baseColor, unsigned char brightness)
-{
-	c->r = baseColor->r ;//< brightness ? 0 : baseColor->r - brightness;
-	c->g = baseColor->g ;//< brightness ? 0 : baseColor->g - brightness;
-	c->b = baseColor->b ;//< brightness ? 0 : baseColor->b - brightness;
-}
-
 #define NO_KEY 0
 #define SHORT_PRESS 1
 #define LONG_PRESS 2
@@ -44,7 +37,7 @@ uchar keyPress()
 		{
 			btnPressed = 1;
 			
-			if(btnTimer < 150)
+			if(btnTimer < 15)
 				btnTimer++;
 		}		
 	}
@@ -52,14 +45,14 @@ uchar keyPress()
 	
 	if(btnPressed)
 	{
-		if(btnTimer >= 150 /*&& (btnTimer & 0x2)*/)
+		if(btnTimer >= 15 /*&& (btnTimer & 0x2)*/)
 		{	
 			retVal = LONG_PRESS;
 		}
 	}
 	else
 	{
-		if(btnTimer > 0 && btnTimer < 150)
+		if(btnTimer > 0 && btnTimer < 15)
 		{
 			retVal = SHORT_PRESS;
 		}
@@ -143,89 +136,77 @@ ISR(PCINT0_vect)
 ;
 }
 
-void resetProgram(uchar program, unsigned short *interpDelay)
-{
-	g_curProgram.curStep = 0;
-	*interpDelay = gPrograms[program].steps[g_curProgram.curStep / 2].dur0;  
-	g_curProgram.curColor = gPrograms[program].pal->pal[gPrograms[program].steps[0].col];
-	
-	if(gPrograms[program].steps[1].op == CMD_LAST)
-	{
-		g_curProgram.nextColor = g_curProgram.curColor;
 
+void advanceStep(uchar program)
+{
+	g_curProgram.curStep = (g_curProgram.curStep + 1);
+	if(g_curProgram.curStep >= g_curProgram.numStep)
+	{
+		g_curProgram.curStep = 0;
 	}
-	else g_curProgram.nextColor = gPrograms[program].pal->pal[gPrograms[program].steps[1].col];
+
+	uchar nextStep = (g_curProgram.curStep + 1);
+	if(nextStep >= g_curProgram.numStep)
+	{
+		nextStep = 0;
+	}
+	
+	g_curProgram.curStepTime = 0;
+	g_curProgram.maxStepTime = DURATION(gPrograms[program].steps[g_curProgram.curStep].duration);
+	
+	g_curProgram.curColor = gPrograms[program].pal->pal[gPrograms[program].steps[g_curProgram.curStep].col];
+	g_curProgram.nextColor = gPrograms[program].pal->pal[gPrograms[program].steps[nextStep].col];
 }
 
-void doProgramLoop(uchar program, unsigned char interpStep)
+void resetProgram(uchar program)
+{
+	g_curProgram.curStep = gPrograms[program].numSteps - 1;
+	g_curProgram.numStep = gPrograms[program].numSteps;
+	
+	advanceStep(program);
+}
+
+void doProgramLoop(uchar program)
 {
 	volatile tRGB interpCol;
-	if(g_curProgram.curStep % 2 == 0)
+	Command *step = &(gPrograms[program].steps[g_curProgram.curStep]);
+	
+	unsigned short remainingTime = g_curProgram.maxStepTime - g_curProgram.curStepTime;
+ 
+	
+	if(!(step->fadeToNext))
 	{
 		interpCol = g_curProgram.curColor;
 	}
 	else
 	{
-		interpCol.r=((unsigned short)g_curProgram.curColor.r * (INTERP_STEPS - interpStep) + (unsigned short)g_curProgram.nextColor.r * interpStep) / INTERP_STEPS;
-		interpCol.g=((unsigned short)g_curProgram.curColor.g * (INTERP_STEPS - interpStep) + (unsigned short)g_curProgram.nextColor.g * interpStep) / INTERP_STEPS;
-		interpCol.b=((unsigned short)g_curProgram.curColor.b * (INTERP_STEPS - interpStep) + (unsigned short)g_curProgram.nextColor.b * interpStep) / INTERP_STEPS;
-		
+		interpCol.r=((unsigned short)g_curProgram.curColor.r * remainingTime + (unsigned short)g_curProgram.nextColor.r *  g_curProgram.curStepTime) / g_curProgram.maxStepTime ;
+		interpCol.g=((unsigned short)g_curProgram.curColor.g * remainingTime + (unsigned short)g_curProgram.nextColor.g *  g_curProgram.curStepTime) / g_curProgram.maxStepTime ;
+		interpCol.b=((unsigned short)g_curProgram.curColor.b * remainingTime + (unsigned short)g_curProgram.nextColor.b *  g_curProgram.curStepTime) / g_curProgram.maxStepTime ;	
 	}
 	
-	interpCol.r=0;
-	interpCol.g=0;
-	interpCol.b=1;
+	//increase current time, change to next step if needed
+	g_curProgram.curStepTime++;
+	if(g_curProgram.curStepTime >= g_curProgram.maxStepTime)
+	{
+		advanceStep(program);
+	}
+	
+	//interpCol.r=0;
+	//interpCol.g=0;
+	//interpCol.b=1;
 	ws2812_setleds(&interpCol, 1);
 }
 
-void advanceStep(uchar program, unsigned short *interpDelay)
-{
-	uchar nextStep = (g_curProgram.curStep + 1)%(2*MAX_PROG_STEPS);
-	
-	if((nextStep % 2 == 0) && gPrograms[program].steps[nextStep/2].op == CMD_LAST)
-	{
-		g_curProgram.curStep = 0;
-		nextStep = 0;
-	}
-	else
-	{
-		g_curProgram.curStep = nextStep;
-	}
-	
-	nextStep = (g_curProgram.curStep/2 + 1)%(MAX_PROG_STEPS);
-	
-	if(gPrograms[program].steps[nextStep].op == CMD_LAST)
-	{
-		nextStep= 0;
-	}
-
-	
-	if(g_curProgram.curStep % 2 == 0)
-	{
-		*interpDelay = gPrograms[program].steps[g_curProgram.curStep / 2].dur0;
-		
-	}
-	else
-	{
-		*interpDelay = gPrograms[program].steps[g_curProgram.curStep / 2].dur1;
-	}
-	
-	g_curProgram.curColor = gPrograms[program].pal->pal[gPrograms[program].steps[g_curProgram.curStep / 2].col];
-	g_curProgram.nextColor = gPrograms[program].pal->pal[gPrograms[program].steps[nextStep].col];
-
-}
+#define DLY_STEP 100
 
 __attribute__ ((noreturn)) void main(void) 
 {
-	volatile unsigned char curTime = 0;
 	volatile uchar curProgram = 2;
-	//char curBrightness = 0;
 	
-	volatile unsigned short interpStep = 1;
-
 	initHw();
 	
-	resetProgram(curProgram, &interpStep);
+	resetProgram(curProgram);
 
 	do
 	{	
@@ -237,9 +218,12 @@ __attribute__ ((noreturn)) void main(void)
 			
 			case SHORT_PRESS:
 			{
-				curProgram = (curProgram + 1) % NUM_PROGS;
-				resetProgram(curProgram, &interpStep);
-				curTime = 0;
+				curProgram = (curProgram + 1);
+				if(curProgram >= NUM_PROGS)
+					curProgram = 0;
+				
+				resetProgram(curProgram);
+				
 				break;
 			}
 			case LONG_PRESS:
@@ -256,7 +240,7 @@ __attribute__ ((noreturn)) void main(void)
 				//reset keypress
 				keyPress();
 
-				col.r = col.g = col.b = 1;
+				col.r = col.g = col.b = 0;
 				ws2812_setleds(&col, 1);
 
 				gotoSleep();
@@ -275,16 +259,9 @@ __attribute__ ((noreturn)) void main(void)
 			}
 		}
 
-		curTime = (curTime + 1) % INTERP_STEPS;
+		doProgramLoop(curProgram);
 
-		if(curTime == 0 || interpStep == 0)
-		{
-			advanceStep(curProgram, &interpStep);
-		}
-		
-		doProgramLoop(curProgram, curTime);
-
-		_delay_ms(interpStep);
+		_delay_ms(DLY_STEP);
 
 	}
 	while(1);
